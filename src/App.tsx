@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-// Gunakan import type untuk ChangeEvent agar lolos verbatimModuleSyntax
 import type { ChangeEvent } from 'react';
 import { 
   AudioWaveform, 
@@ -39,6 +38,8 @@ function App() {
   const analyserNode = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
+  
+  // Ref untuk tracking drag state
   const isDragging = useRef<'start' | 'end' | null>(null);
 
   const duration = audioBuffer ? audioBuffer.duration : 0;
@@ -53,6 +54,7 @@ function App() {
     return (parseInt(m as string) || 0) * 60 + (parseFloat(s as string) || 0);
   };
 
+  // Sinkronisasi Volume
   useEffect(() => {
     if (gainNode.current && audioContext.current) {
       gainNode.current.gain.setTargetAtTime(volume, audioContext.current.currentTime, 0.01);
@@ -91,11 +93,15 @@ function App() {
     }
     const startX = (startTime / buffer.duration) * canvas.width;
     const endX = (endTime / buffer.duration) * canvas.width;
+    
+    // Area Terpilih
     ctx.fillStyle = 'rgba(209, 58, 22, 0.15)';
     ctx.fillRect(startX, 0, endX - startX, canvas.height);
+    
+    // Handle Bars
     ctx.fillStyle = '#d13a16';
-    ctx.fillRect(startX - 1, 0, 2, canvas.height);
-    ctx.fillRect(endX - 1, 0, 2, canvas.height);
+    ctx.fillRect(startX - 2, 0, 4, canvas.height);
+    ctx.fillRect(endX - 2, 0, 4, canvas.height);
   };
 
   const drawBase = () => {
@@ -109,29 +115,57 @@ function App() {
 
   useEffect(() => { if (audioBuffer) drawBase(); }, [startTime, endTime, audioBuffer]);
 
-  const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+  // Logika Drag & Slide (Mouse + Touch)
+  const updateCropPosition = (clientX: number) => {
+    if (!canvasRef.current || !audioBuffer || !isDragging.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
+    const newTime = (x / rect.width) * audioBuffer.duration;
+
+    if (isDragging.current === 'start') {
+      setStartTime(Math.min(newTime, endTime - 0.1));
+    } else {
+      setEndTime(Math.max(newTime, startTime + 0.1));
+    }
+  };
+
+  useEffect(() => {
+    const handleGlobalMove = (e: MouseEvent | TouchEvent) => {
+      if (!isDragging.current) return;
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      updateCropPosition(clientX);
+    };
+
+    const handleGlobalUp = () => {
+      isDragging.current = null;
+    };
+
+    window.addEventListener('mousemove', handleGlobalMove);
+    window.addEventListener('touchmove', handleGlobalMove, { passive: false });
+    window.addEventListener('mouseup', handleGlobalUp);
+    window.addEventListener('touchend', handleGlobalUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMove);
+      window.removeEventListener('touchmove', handleGlobalMove);
+      window.removeEventListener('mouseup', handleGlobalUp);
+      window.removeEventListener('touchend', handleGlobalUp);
+    };
+  }, [startTime, endTime, audioBuffer]);
+
+  const handleStartDrag = (e: React.MouseEvent | React.TouchEvent) => {
     if (!audioBuffer || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const x = clientX - rect.left;
+    const clickedTime = (x / rect.width) * audioBuffer.duration;
+
+    const distStart = Math.abs(clickedTime - startTime);
+    const distEnd = Math.abs(clickedTime - endTime);
     
-    let clientX: number;
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX;
-    } else {
-      clientX = (e as React.MouseEvent).clientX;
-    }
-
-    const x = (clientX - rect.left) * (canvasRef.current.width / rect.width);
-    const clickedTime = (x / canvasRef.current.width) * duration;
-
-    if (e.type === 'mousedown' || e.type === 'touchstart') {
-      const distStart = Math.abs(clickedTime - startTime);
-      const distEnd = Math.abs(clickedTime - endTime);
-      isDragging.current = distStart < distEnd ? 'start' : 'end';
-    } else if (isDragging.current) {
-      const newTime = Math.max(0, Math.min(duration, clickedTime));
-      if (isDragging.current === 'start') setStartTime(Math.min(newTime, endTime - 0.1));
-      else setEndTime(Math.max(newTime, startTime + 0.1));
-    }
+    // Tentukan handle mana yang lebih dekat untuk di-slide
+    isDragging.current = distStart < distEnd ? 'start' : 'end';
+    updateCropPosition(clientX);
   };
 
   const togglePlayback = () => {
@@ -219,7 +253,6 @@ function App() {
       const rendered = await offline.startRendering();
 
       const mp3encoder = new Mp3Encoder(rendered.numberOfChannels, rendered.sampleRate, 128);
-      // PERBAIKAN: Gunakan Uint8Array[] untuk mp3Data
       const mp3Data: Uint8Array[] = [];
 
       const left = rendered.getChannelData(0);
@@ -243,18 +276,12 @@ function App() {
         const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
         const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
         const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
-        if (mp3buf.length > 0) {
-          // PERBAIKAN: Pastikan buffer dicopy sebagai Uint8Array murni
-          mp3Data.push(new Uint8Array(mp3buf));
-        }
+        if (mp3buf.length > 0) mp3Data.push(new Uint8Array(mp3buf));
       }
 
       const endBuf = mp3encoder.flush();
-      if (endBuf.length > 0) {
-        mp3Data.push(new Uint8Array(endBuf));
-      }
+      if (endBuf.length > 0) mp3Data.push(new Uint8Array(endBuf));
 
-      // Blob sekarang akan menerima mp3Data tanpa error typing
       const blob = new Blob(mp3Data, { type: 'audio/mp3' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -280,7 +307,7 @@ function App() {
         <div className="px-8 py-6 flex items-center justify-between bg-white/[0.01] border-b border-white/5">
           <div className="flex items-center gap-2">
             <AudioWaveform className="text-[#d13a16]" size={28} />
-            <span className="ml-4 text-sm font-bold text-white">Forestric Roblox Audio Studio </span>
+            <span className="ml-4 text-sm font-bold text-white">Forestric Roblox Audio Studio</span>
           </div>
           {file && (
             <button onClick={() => window.location.reload()} className="text-white/10 hover:text-[#d13a16] transition-colors p-2">
@@ -312,17 +339,19 @@ function App() {
                     </span>
                   </div>
                 </div>
-                <div className="relative bg-black/40 rounded-[2.5rem] p-8 border border-white/5 cursor-crosshair overflow-hidden shadow-inner group">
+                {/* CANVAS AREA - Touch & Slide Enabled */}
+                <div className="relative bg-black/40 rounded-[2.5rem] p-8 border border-white/5 cursor-ew-resize overflow-hidden shadow-inner group touch-none">
                   <canvas 
                     ref={canvasRef} 
                     width={1200} 
                     height={200} 
                     className="w-full h-32 md:h-44"
-                    onMouseDown={handleInteraction}
-                    onMouseMove={handleInteraction}
-                    onMouseUp={() => { isDragging.current = null; }}
-                    onMouseLeave={() => { isDragging.current = null; }}
+                    onMouseDown={handleStartDrag}
+                    onTouchStart={handleStartDrag}
                   />
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none opacity-20 text-[8px] font-bold uppercase tracking-[0.3em]">
+                    Slide to Crop
+                  </div>
                 </div>
               </div>
 
