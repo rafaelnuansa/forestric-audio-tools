@@ -59,19 +59,31 @@ function App() {
   }, [volume]);
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    if (!audioContext.current) {
-      audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
-    }
     const uploadedFile = e.target.files?.[0];
     if (!uploadedFile) return;
 
-    const arrayBuffer = await uploadedFile.arrayBuffer();
-    const decodedBuffer = await audioContext.current.decodeAudioData(arrayBuffer);
-    
-    setFile(uploadedFile);
-    setAudioBuffer(decodedBuffer);
-    setStartTime(0);
-    setEndTime(decodedBuffer.duration);
+    // Validasi Manual: Pastikan file adalah audio
+    if (!uploadedFile.type.startsWith('audio/') && 
+        !['.mp3', '.wav', '.m4a', '.ogg'].some(ext => uploadedFile.name.toLowerCase().endsWith(ext))) {
+      alert("Format file tidak didukung. Silakan pilih file audio (MP3/WAV/M4A).");
+      return;
+    }
+
+    if (!audioContext.current) {
+      audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    try {
+      const arrayBuffer = await uploadedFile.arrayBuffer();
+      const decodedBuffer = await audioContext.current.decodeAudioData(arrayBuffer);
+      
+      setFile(uploadedFile);
+      setAudioBuffer(decodedBuffer);
+      setStartTime(0);
+      setEndTime(decodedBuffer.duration);
+    } catch (err) {
+      alert("Gagal memproses audio. File mungkin rusak atau tidak didukung.");
+    }
   };
 
   const drawStaticWave = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, buffer: AudioBuffer) => {
@@ -277,10 +289,10 @@ function App() {
         <div className="p-8 md:p-10">
           {!file ? (
             <div className="py-24 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[2.5rem] hover:border-[#d13a16]/40 transition-all group bg-white/[0.01] relative cursor-pointer">
-              {/* PERBAIKAN FATAL UNTUK MOBILE FILE MANAGER */}
+              {/* TRIK PAMUNGKAS: Gunakan accept umum untuk memancing File Manager */}
               <input 
                 type="file" 
-                accept="audio/mpeg, audio/wav, audio/mp4, audio/ogg, audio/x-m4a" 
+                accept="*" 
                 onChange={handleFileUpload} 
                 className="absolute inset-0 opacity-0 cursor-pointer z-10" 
               />
