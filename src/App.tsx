@@ -319,7 +319,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <button onClick={() => setMode('standard')} className={`flex items-center gap-4 p-5 rounded-[2.2rem] border-2 transition-all ${mode === 'standard' ? 'border-[#d13a16] bg-[#d13a16]/5 shadow-[0_0_20px_rgba(209,58,22,0.1)]' : 'border-white/5 bg-white/[0.01]'}`}>
                   <div className={`p-3 rounded-2xl ${mode === 'standard' ? 'bg-[#d13a16] text-white' : 'bg-white/5 text-white/20'}`}><Zap size={18} /></div>
                   <div className="text-left leading-tight">
