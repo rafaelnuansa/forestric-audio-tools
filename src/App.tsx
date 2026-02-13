@@ -38,8 +38,6 @@ function App() {
   const analyserNode = useRef<AnalyserNode | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
-  
-  // Ref untuk tracking drag state
   const isDragging = useRef<'start' | 'end' | null>(null);
 
   const duration = audioBuffer ? audioBuffer.duration : 0;
@@ -54,7 +52,6 @@ function App() {
     return (parseInt(m as string) || 0) * 60 + (parseFloat(s as string) || 0);
   };
 
-  // Sinkronisasi Volume
   useEffect(() => {
     if (gainNode.current && audioContext.current) {
       gainNode.current.gain.setTargetAtTime(volume, audioContext.current.currentTime, 0.01);
@@ -93,12 +90,8 @@ function App() {
     }
     const startX = (startTime / buffer.duration) * canvas.width;
     const endX = (endTime / buffer.duration) * canvas.width;
-    
-    // Area Terpilih
     ctx.fillStyle = 'rgba(209, 58, 22, 0.15)';
     ctx.fillRect(startX, 0, endX - startX, canvas.height);
-    
-    // Handle Bars
     ctx.fillStyle = '#d13a16';
     ctx.fillRect(startX - 2, 0, 4, canvas.height);
     ctx.fillRect(endX - 2, 0, 4, canvas.height);
@@ -115,7 +108,6 @@ function App() {
 
   useEffect(() => { if (audioBuffer) drawBase(); }, [startTime, endTime, audioBuffer]);
 
-  // Logika Drag & Slide (Mouse + Touch)
   const updateCropPosition = (clientX: number) => {
     if (!canvasRef.current || !audioBuffer || !isDragging.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
@@ -135,16 +127,11 @@ function App() {
       const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
       updateCropPosition(clientX);
     };
-
-    const handleGlobalUp = () => {
-      isDragging.current = null;
-    };
-
+    const handleGlobalUp = () => { isDragging.current = null; };
     window.addEventListener('mousemove', handleGlobalMove);
     window.addEventListener('touchmove', handleGlobalMove, { passive: false });
     window.addEventListener('mouseup', handleGlobalUp);
     window.addEventListener('touchend', handleGlobalUp);
-
     return () => {
       window.removeEventListener('mousemove', handleGlobalMove);
       window.removeEventListener('touchmove', handleGlobalMove);
@@ -159,11 +146,8 @@ function App() {
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const x = clientX - rect.left;
     const clickedTime = (x / rect.width) * audioBuffer.duration;
-
     const distStart = Math.abs(clickedTime - startTime);
     const distEnd = Math.abs(clickedTime - endTime);
-    
-    // Tentukan handle mana yang lebih dekat untuk di-slide
     isDragging.current = distStart < distEnd ? 'start' : 'end';
     updateCropPosition(clientX);
   };
@@ -178,33 +162,25 @@ function App() {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     } else {
       if (!audioContext.current || !audioBuffer || !canvasRef.current) return;
-
       sourceNode.current = audioContext.current.createBufferSource();
       sourceNode.current.buffer = audioBuffer;
       sourceNode.current.playbackRate.value = mode === 'standard' ? 2.5 : 2.0;
-      
       gainNode.current = audioContext.current.createGain();
       gainNode.current.gain.value = volume;
-      
       analyserNode.current = audioContext.current.createAnalyser();
       analyserNode.current.fftSize = 512;
-      
       sourceNode.current.connect(gainNode.current);
       gainNode.current.connect(analyserNode.current);
       analyserNode.current.connect(audioContext.current.destination);
-      
       sourceNode.current.start(0, startTime, endTime - startTime);
       setIsPlaying(true);
-
       const render = () => {
         if (!analyserNode.current || !canvasRef.current) return;
         const data = new Uint8Array(analyserNode.current.frequencyBinCount);
         analyserNode.current.getByteFrequencyData(data);
         drawBase();
-        
         const ctx = canvasRef.current.getContext('2d');
         if (!ctx) return;
-
         ctx.beginPath(); ctx.lineWidth = 3; ctx.strokeStyle = '#d13a16';
         const sw = canvasRef.current.width / data.length;
         let x = 0;
@@ -232,32 +208,20 @@ function App() {
       const speed = mode === 'standard' ? 2.5 : 2.0;
       const croppedDuration = endTime - startTime;
       const outputDuration = croppedDuration / speed;
-      
-      const offline = new OfflineAudioContext(
-        audioBuffer.numberOfChannels, 
-        Math.floor(outputDuration * audioBuffer.sampleRate), 
-        audioBuffer.sampleRate
-      );
-
+      const offline = new OfflineAudioContext(audioBuffer.numberOfChannels, Math.floor(outputDuration * audioBuffer.sampleRate), audioBuffer.sampleRate);
       const source = offline.createBufferSource();
       source.buffer = audioBuffer;
       source.playbackRate.value = speed;
-
       const gain = offline.createGain();
       gain.gain.value = volume;
-
       source.connect(gain);
       gain.connect(offline.destination);
-
       source.start(0, startTime, croppedDuration);
       const rendered = await offline.startRendering();
-
       const mp3encoder = new Mp3Encoder(rendered.numberOfChannels, rendered.sampleRate, 128);
       const mp3Data: Uint8Array[] = [];
-
       const left = rendered.getChannelData(0);
       const right = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : left;
-
       const floatToInt16 = (chanData: Float32Array) => {
         const l = chanData.length;
         const r = new Int16Array(l);
@@ -267,21 +231,15 @@ function App() {
         }
         return r;
       };
-
       const leftInt16 = floatToInt16(left);
       const rightInt16 = floatToInt16(right);
-
       const sampleBlockSize = 1152;
       for (let i = 0; i < leftInt16.length; i += sampleBlockSize) {
-        const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
-        const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
-        const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+        const mp3buf = mp3encoder.encodeBuffer(leftInt16.subarray(i, i + sampleBlockSize), rightInt16.subarray(i, i + sampleBlockSize));
         if (mp3buf.length > 0) mp3Data.push(new Uint8Array(mp3buf));
       }
-
       const endBuf = mp3encoder.flush();
       if (endBuf.length > 0) mp3Data.push(new Uint8Array(endBuf));
-
       const blob = new Blob(mp3Data, { type: 'audio/mp3' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -319,14 +277,19 @@ function App() {
         <div className="p-8 md:p-10">
           {!file ? (
             <div className="py-24 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[2.5rem] hover:border-[#d13a16]/40 transition-all group bg-white/[0.01] relative cursor-pointer">
-              <input type="file" accept="audio/*" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+              {/* PERBAIKAN DI SINI: accept lebih luas untuk kompatibilitas mobile */}
+              <input 
+                type="file" 
+                accept="audio/*, .mp3, .wav, .m4a, .ogg" 
+                onChange={handleFileUpload} 
+                className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+              />
               <Upload size={62} className="text-white/10 group-hover:text-[#d13a16] transition-colors" />
               <h3 className="text-lg font-bold mt-3 ">Import Audio Track</h3>
               <p className="text-[10px] font-bold text-white uppercase mt-2 font-mono">Ready for Roblox Pitching</p>
             </div>
           ) : (
             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-              
               <div className="space-y-4">
                 <div className="flex justify-between items-end px-2">
                   <div className="flex flex-col gap-1">
@@ -339,88 +302,42 @@ function App() {
                     </span>
                   </div>
                 </div>
-                {/* CANVAS AREA - Touch & Slide Enabled */}
                 <div className="relative bg-black/40 rounded-[2.5rem] p-8 border border-white/5 cursor-ew-resize overflow-hidden shadow-inner group touch-none">
-                  <canvas 
-                    ref={canvasRef} 
-                    width={1200} 
-                    height={200} 
-                    className="w-full h-32 md:h-44"
-                    onMouseDown={handleStartDrag}
-                    onTouchStart={handleStartDrag}
-                  />
-                  <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-none opacity-20 text-[8px] font-bold uppercase tracking-[0.3em]">
-                    Slide to Crop
-                  </div>
+                  <canvas ref={canvasRef} width={1200} height={200} className="w-full h-32 md:h-44" onMouseDown={handleStartDrag} onTouchStart={handleStartDrag} />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => setMode('standard')}
-                  className={`flex items-center gap-4 p-5 rounded-[2.2rem] border-2 transition-all ${mode === 'standard' ? 'border-[#d13a16] bg-[#d13a16]/5 shadow-[0_0_20px_rgba(209,58,22,0.1)]' : 'border-white/5 bg-white/[0.01]'}`}>
-                  <div className={`p-3 rounded-2xl ${mode === 'standard' ? 'bg-[#d13a16] text-white' : 'bg-white/5 text-white/20'}`}>
-                    <Zap size={18} />
-                  </div>
+                <button onClick={() => setMode('standard')} className={`flex items-center gap-4 p-5 rounded-[2.2rem] border-2 transition-all ${mode === 'standard' ? 'border-[#d13a16] bg-[#d13a16]/5 shadow-[0_0_20px_rgba(209,58,22,0.1)]' : 'border-white/5 bg-white/[0.01]'}`}>
+                  <div className={`p-3 rounded-2xl ${mode === 'standard' ? 'bg-[#d13a16] text-white' : 'bg-white/5 text-white/20'}`}><Zap size={18} /></div>
                   <div className="text-left leading-tight">
                     <p className={`font-bold text-xs ${mode === 'standard' ? 'text-[#d13a16]' : 'text-white/60'}`}>Days Render</p>
                     <p className="text-[9px] font-bold text-white/20 uppercase mt-1">2.5x / 150% Pitch</p>
-                    <p className="text-[9px] font-bold text-white/20  mt-1">;music ... pitch 0.40</p>
+                    <p className="text-[9px] font-bold text-white/20 mt-1">;music ... pitch 0.40</p>
                   </div>
                 </button>
-
-                <button onClick={() => setMode('smooth')}
-                  className={`flex items-center gap-4 p-5 rounded-[2.2rem] border-2 transition-all ${mode === 'smooth' ? 'border-[#d13a16] bg-[#d13a16]/5 shadow-[0_0_20px_rgba(209,58,22,0.1)]' : 'border-white/5 bg-white/[0.01]'}`}>
-                  <div className={`p-3 rounded-2xl ${mode === 'smooth' ? 'bg-[#d13a16] text-white' : 'bg-white/5 text-white/20'}`}>
-                    <Activity size={18} />
-                  </div>
+                <button onClick={() => setMode('smooth')} className={`flex items-center gap-4 p-5 rounded-[2.2rem] border-2 transition-all ${mode === 'smooth' ? 'border-[#d13a16] bg-[#d13a16]/5 shadow-[0_0_20px_rgba(209,58,22,0.1)]' : 'border-white/5 bg-white/[0.01]'}`}>
+                  <div className={`p-3 rounded-2xl ${mode === 'smooth' ? 'bg-[#d13a16] text-white' : 'bg-white/5 text-white/20'}`}><Activity size={18} /></div>
                   <div className="text-left leading-tight">
                     <p className={`font-bold text-xs ${mode === 'smooth' ? 'text-[#d13a16]' : 'text-white/60'}`}>Abiw Render</p>
                     <p className="text-[9px] font-bold text-white/20 uppercase mt-1">200% / 12 Semitones</p>
-                    <p className="text-[9px] font-bold text-white/20  mt-1">;music ... pitch 0.49</p>
+                    <p className="text-[9px] font-bold text-white/20 mt-1">;music ... pitch 0.49</p>
                   </div>
                 </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-white/[0.02] p-6 rounded-[2.2rem] border border-white/5 space-y-4">
-                      <div className="flex items-center gap-2 px-1">
-                          <Timer size={14} className="text-[#d13a16]" />
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/30">Manual Crop Tool</span>
-                      </div>
-                      <div className="flex flex-col gap-4">
-                          <div className="flex items-center justify-between gap-4">
-                              <span className="text-[9px] font-bold uppercase text-white/20 w-12 italic">Start</span>
-                              <div className="flex flex-1 items-center gap-2">
-                                  <input type="number" value={startMMSS.m} onChange={(e) => setStartTime(mmssToSeconds(e.target.value, startMMSS.s))}
-                                         className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" />
-                                  <span className="text-white/20">:</span>
-                                  <input type="number" step="0.1" value={startMMSS.s} onChange={(e) => setStartTime(mmssToSeconds(startMMSS.m, e.target.value))}
-                                         className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" />
-                              </div>
-                          </div>
-                          <div className="flex items-center justify-between gap-4">
-                              <span className="text-[9px] font-bold uppercase text-white/20 w-12 italic">End</span>
-                              <div className="flex flex-1 items-center gap-2">
-                                  <input type="number" value={endMMSS.m} onChange={(e) => setEndTime(mmssToSeconds(e.target.value, endMMSS.s))}
-                                         className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" />
-                                  <span className="text-white/20">:</span>
-                                  <input type="number" step="0.1" value={endMMSS.s} onChange={(e) => setEndTime(mmssToSeconds(endMMSS.m, e.target.value))}
-                                         className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" />
-                              </div>
-                          </div>
-                      </div>
+                <div className="bg-white/[0.02] p-6 rounded-[2.2rem] border border-white/5 space-y-4">
+                  <div className="flex items-center gap-2 px-1"><Timer size={14} className="text-[#d13a16]" /><span className="text-[10px] font-bold uppercase tracking-widest text-white/30">Manual Crop Tool</span></div>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between gap-4"><span className="text-[9px] font-bold uppercase text-white/20 w-12 italic">Start</span><div className="flex flex-1 items-center gap-2"><input type="number" value={startMMSS.m} onChange={(e) => setStartTime(mmssToSeconds(e.target.value, startMMSS.s))} className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" /><span className="text-white/20">:</span><input type="number" step="0.1" value={startMMSS.s} onChange={(e) => setStartTime(mmssToSeconds(startMMSS.m, e.target.value))} className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" /></div></div>
+                    <div className="flex items-center justify-between gap-4"><span className="text-[9px] font-bold uppercase text-white/20 w-12 italic">End</span><div className="flex flex-1 items-center gap-2"><input type="number" value={endMMSS.m} onChange={(e) => setEndTime(mmssToSeconds(e.target.value, endMMSS.s))} className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" /><span className="text-white/20">:</span><input type="number" step="0.1" value={endMMSS.s} onChange={(e) => setEndTime(mmssToSeconds(endMMSS.m, e.target.value))} className="w-full bg-black/30 border border-white/5 rounded-xl px-3 py-2 text-xs font-mono text-white/80 outline-none focus:border-[#d13a16]/50 text-center" /></div></div>
                   </div>
-
-                  <div className="bg-white/[0.02] p-6 rounded-[2.2rem] border border-white/5 flex flex-col justify-center">
-                      <div className="flex justify-between items-center mb-4 px-1">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 flex items-center gap-2">
-                            <Volume2 size={14} /> Master Gain
-                          </span>
-                          <span className="text-xs font-bold text-[#d13a16] font-mono">{volume.toFixed(2)}x</span>
-                      </div>
-                      <input type="range" min="0" max="2" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))}
-                             className="w-full accent-[#d13a16] h-1 bg-white/10 rounded-full appearance-none cursor-pointer" />
-                  </div>
+                </div>
+                <div className="bg-white/[0.02] p-6 rounded-[2.2rem] border border-white/5 flex flex-col justify-center">
+                  <div className="flex justify-between items-center mb-4 px-1"><span className="text-[10px] font-bold uppercase tracking-widest text-white/30 flex items-center gap-2"><Volume2 size={14} /> Master Gain</span><span className="text-xs font-bold text-[#d13a16] font-mono">{volume.toFixed(2)}x</span></div>
+                  <input type="range" min="0" max="2" step="0.05" value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))} className="w-full accent-[#d13a16] h-1 bg-white/10 rounded-full appearance-none cursor-pointer" />
+                </div>
               </div>
 
               <div className="flex flex-col md:flex-row gap-4 pt-6 border-t border-white/5">
@@ -428,7 +345,6 @@ function App() {
                   {isPlaying ? <Square size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
                   <span className="uppercase tracking-[0.2em] text-[10px] font-black">{isPlaying ? 'Stop' : 'Preview'}</span>
                 </button>
-
                 <button onClick={exportAudio} disabled={isExporting} className="flex-1 flex items-center justify-center gap-4 bg-[#d13a16] text-white px-8 py-5 rounded-[2.2rem] font-bold hover:bg-[#a12b11] transition-all shadow-lg active:scale-95 disabled:bg-white/5">
                   {isExporting ? <RefreshCcw size={18} className="animate-spin" /> : <Download size={18} />}
                   <span className="uppercase tracking-[0.2em] text-[10px] font-black">{isExporting ? 'Encoding' : 'Download MP3'}</span>
@@ -437,6 +353,7 @@ function App() {
             </div>
           )}
         </div>
+
         <div className="px-10 py-6 bg-black/30 flex flex-col md:flex-row justify-between items-center gap-4 text-[9px] font-bold text-white">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-2 font-black tracking-tighter "><ShieldCheck size={10} /> Tools by rafaelnuansa</span>
