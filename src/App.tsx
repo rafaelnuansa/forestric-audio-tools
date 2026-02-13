@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
 import { 
   AudioWaveform, 
   Upload, 
@@ -13,37 +13,43 @@ import {
   Trash2,
   Timer
 } from 'lucide-react';
-// Import dari package yang sudah diperbaiki
 import { Mp3Encoder } from '@breezystack/lamejs';
 
+// Extend interface Window untuk webkitAudioContext (Safari support)
+declare global {
+  interface Window {
+    webkitAudioContext: typeof AudioContext;
+  }
+}
+
 function App() {
-  const [file, setFile] = useState(null);
-  const [audioBuffer, setAudioBuffer] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [startTime, setStartTime] = useState(0);
-  const [endTime, setEndTime] = useState(0);
-  const [volume, setVolume] = useState(1.0);
-  const [mode, setMode] = useState('standard'); 
+  const [file, setFile] = useState<File | null>(null);
+  const [audioBuffer, setAudioBuffer] = useState<AudioBuffer | null>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [startTime, setStartTime] = useState<number>(0);
+  const [endTime, setEndTime] = useState<number>(0);
+  const [volume, setVolume] = useState<number>(1.0);
+  const [mode, setMode] = useState<'standard' | 'smooth'>('standard'); 
   
-  const audioContext = useRef(null);
-  const sourceNode = useRef(null);
-  const gainNode = useRef(null);
-  const analyserNode = useRef(null);
-  const canvasRef = useRef(null);
-  const animationRef = useRef(null);
-  const isDragging = useRef(null);
+  const audioContext = useRef<AudioContext | null>(null);
+  const sourceNode = useRef<AudioBufferSourceNode | null>(null);
+  const gainNode = useRef<GainNode | null>(null);
+  const analyserNode = useRef<AnalyserNode | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationRef = useRef<number | null>(null);
+  const isDragging = useRef<'start' | 'end' | null>(null);
 
   const duration = audioBuffer ? audioBuffer.duration : 0;
 
-  const secondsToMMSS = (seconds) => {
+  const secondsToMMSS = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = (seconds % 60).toFixed(2);
     return { m, s: parseFloat(s) };
   };
 
-  const mmssToSeconds = (m, s) => {
-    return (parseInt(m) || 0) * 60 + (parseFloat(s) || 0);
+  const mmssToSeconds = (m: string | number, s: string | number) => {
+    return (parseInt(m as string) || 0) * 60 + (parseFloat(s as string) || 0);
   };
 
   useEffect(() => {
@@ -52,19 +58,23 @@ function App() {
     }
   }, [volume]);
 
-  const handleFileUpload = async (e) => {
-    if (!audioContext.current) audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
-    const uploadedFile = e.target.files[0];
+  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    if (!audioContext.current) {
+      audioContext.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const uploadedFile = e.target.files?.[0];
     if (!uploadedFile) return;
+
     const arrayBuffer = await uploadedFile.arrayBuffer();
     const decodedBuffer = await audioContext.current.decodeAudioData(arrayBuffer);
+    
     setFile(uploadedFile);
     setAudioBuffer(decodedBuffer);
     setStartTime(0);
     setEndTime(decodedBuffer.duration);
   };
 
-  const drawStaticWave = (ctx, canvas, buffer) => {
+  const drawStaticWave = (ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, buffer: AudioBuffer) => {
     const data = buffer.getChannelData(0);
     const step = Math.ceil(data.length / canvas.width);
     const amp = canvas.height / 2;
@@ -91,24 +101,33 @@ function App() {
     const canvas = canvasRef.current;
     if (!canvas || !audioBuffer) return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawStaticWave(ctx, canvas, audioBuffer);
   };
 
   useEffect(() => { if (audioBuffer) drawBase(); }, [startTime, endTime, audioBuffer]);
 
-  const handleInteraction = (e) => {
-    if (!audioBuffer) return;
+  const handleInteraction = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!audioBuffer || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    
+    let clientX: number;
+    if ('touches' in e) {
+      clientX = e.touches[0].clientX;
+    } else {
+      clientX = (e as React.MouseEvent).clientX;
+    }
+
     const x = (clientX - rect.left) * (canvasRef.current.width / rect.width);
     const clickedTime = (x / canvasRef.current.width) * duration;
+
     if (e.type === 'mousedown' || e.type === 'touchstart') {
       const distStart = Math.abs(clickedTime - startTime);
       const distEnd = Math.abs(clickedTime - endTime);
       isDragging.current = distStart < distEnd ? 'start' : 'end';
     } else if (isDragging.current) {
-      let newTime = Math.max(0, Math.min(duration, clickedTime));
+      const newTime = Math.max(0, Math.min(duration, clickedTime));
       if (isDragging.current === 'start') setStartTime(Math.min(newTime, endTime - 0.1));
       else setEndTime(Math.max(newTime, startTime + 0.1));
     }
@@ -121,8 +140,10 @@ function App() {
         sourceNode.current.disconnect();
       }
       setIsPlaying(false);
-      cancelAnimationFrame(animationRef.current);
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
     } else {
+      if (!audioContext.current || !audioBuffer || !canvasRef.current) return;
+
       sourceNode.current = audioContext.current.createBufferSource();
       sourceNode.current.buffer = audioBuffer;
       sourceNode.current.playbackRate.value = mode === 'standard' ? 2.5 : 2.0;
@@ -141,11 +162,14 @@ function App() {
       setIsPlaying(true);
 
       const render = () => {
-        if (!analyserNode.current) return;
+        if (!analyserNode.current || !canvasRef.current) return;
         const data = new Uint8Array(analyserNode.current.frequencyBinCount);
         analyserNode.current.getByteFrequencyData(data);
         drawBase();
+        
         const ctx = canvasRef.current.getContext('2d');
+        if (!ctx) return;
+
         ctx.beginPath(); ctx.lineWidth = 3; ctx.strokeStyle = '#d13a16';
         const sw = canvasRef.current.width / data.length;
         let x = 0;
@@ -161,12 +185,13 @@ function App() {
       render();
       sourceNode.current.onended = () => { 
         setIsPlaying(false); 
-        cancelAnimationFrame(animationRef.current); 
+        if (animationRef.current) cancelAnimationFrame(animationRef.current); 
       };
     }
   };
 
   const exportAudio = async () => {
+    if (!audioBuffer || !file) return;
     setIsExporting(true);
     try {
       const speed = mode === 'standard' ? 2.5 : 2.0;
@@ -192,18 +217,17 @@ function App() {
       source.start(0, startTime, croppedDuration);
       const rendered = await offline.startRendering();
 
-      // Menggunakan Mp3Encoder dari @breezystack/lamejs (tanpa error ReferenceError)
       const mp3encoder = new Mp3Encoder(rendered.numberOfChannels, rendered.sampleRate, 128);
-      const mp3Data = [];
+      const mp3Data: Uint8Array[] = [];
 
       const left = rendered.getChannelData(0);
       const right = rendered.numberOfChannels > 1 ? rendered.getChannelData(1) : left;
 
-      const floatToInt16 = (chanData) => {
+      const floatToInt16 = (chanData: Float32Array) => {
         const l = chanData.length;
         const r = new Int16Array(l);
         for (let i = 0; i < l; i++) {
-          let s = Math.max(-1, Math.min(1, chanData[i]));
+          const s = Math.max(-1, Math.min(1, chanData[i]));
           r[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
         return r;
@@ -217,11 +241,11 @@ function App() {
         const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
         const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
         const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
-        if (mp3buf.length > 0) mp3Data.push(mp3buf);
+        if (mp3buf.length > 0) mp3Data.push(new Uint8Array(mp3buf));
       }
 
       const endBuf = mp3encoder.flush();
-      if (endBuf.length > 0) mp3Data.push(endBuf);
+      if (endBuf.length > 0) mp3Data.push(new Uint8Array(endBuf));
 
       const blob = new Blob(mp3Data, { type: 'audio/mp3' });
       const url = URL.createObjectURL(blob);
@@ -232,7 +256,7 @@ function App() {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Export failed:", err);
-      alert("Error saat export: " + err.message);
+      alert("Render Error: " + (err instanceof Error ? err.message : "Unknown error"));
     } finally {
       setIsExporting(false);
     }
@@ -247,7 +271,7 @@ function App() {
         
         <div className="px-8 py-6 flex items-center justify-between bg-white/[0.01] border-b border-white/5">
           <div className="flex items-center gap-2">
-             <AudioWaveform className="text-[#d13a16]" size={28} />
+            <AudioWaveform className="text-[#d13a16]" size={28} />
             <span className="ml-4 text-sm font-bold text-white">Forestric Roblox Audio Studio </span>
           </div>
           {file && (
@@ -266,7 +290,7 @@ function App() {
               <p className="text-[10px] font-bold text-white uppercase mt-2 font-mono">Ready for Roblox Pitching</p>
             </div>
           ) : (
-            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="space-y-8">
               <div className="space-y-4">
                 <div className="flex justify-between items-end px-2">
                   <div className="flex flex-col gap-1">
@@ -287,8 +311,8 @@ function App() {
                     className="w-full h-32 md:h-44"
                     onMouseDown={handleInteraction}
                     onMouseMove={handleInteraction}
-                    onMouseUp={() => isDragging.current = null}
-                    onMouseLeave={() => isDragging.current = null}
+                    onMouseUp={() => { isDragging.current = null; }}
+                    onMouseLeave={() => { isDragging.current = null; }}
                   />
                 </div>
               </div>
@@ -302,7 +326,7 @@ function App() {
                   <div className="text-left leading-tight">
                     <p className={`font-bold text-xs ${mode === 'standard' ? 'text-[#d13a16]' : 'text-white/60'}`}>Days Render</p>
                     <p className="text-[9px] font-bold text-white/20 uppercase mt-1">2.5x / 150% Pitch</p>
-                    <p className="text-[9px] font-bold text-white/20  mt-1">;music ... pitch 0.40</p>
+                    <p className="text-[9px] font-bold text-white/20 mt-1">;music ... pitch 0.40</p>
                   </div>
                 </button>
 
@@ -314,7 +338,7 @@ function App() {
                   <div className="text-left leading-tight">
                     <p className={`font-bold text-xs ${mode === 'smooth' ? 'text-[#d13a16]' : 'text-white/60'}`}>Abiw Render</p>
                     <p className="text-[9px] font-bold text-white/20 uppercase mt-1">200% / 12 Semitones</p>
-                    <p className="text-[9px] font-bold text-white/20  mt-1">;music ... pitch 0.49</p>
+                    <p className="text-[9px] font-bold text-white/20 mt-1">;music ... pitch 0.49</p>
                   </div>
                 </button>
               </div>
