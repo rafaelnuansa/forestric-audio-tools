@@ -277,10 +277,10 @@ function App() {
         <div className="p-8 md:p-10">
           {!file ? (
             <div className="py-24 flex flex-col items-center justify-center border-2 border-dashed border-white/5 rounded-[2.5rem] hover:border-[#d13a16]/40 transition-all group bg-white/[0.01] relative cursor-pointer">
-              {/* PERBAIKAN DI SINI: accept lebih luas untuk kompatibilitas mobile */}
+              {/* PERBAIKAN FATAL UNTUK MOBILE FILE MANAGER */}
               <input 
                 type="file" 
-                accept="audio/*, .mp3, .wav, .m4a, .ogg" 
+                accept="audio/mpeg, audio/wav, audio/mp4, audio/ogg, audio/x-m4a" 
                 onChange={handleFileUpload} 
                 className="absolute inset-0 opacity-0 cursor-pointer z-10" 
               />
