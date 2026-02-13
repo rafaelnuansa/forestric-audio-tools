@@ -1,4 +1,6 @@
-import React, { useState, useRef, useEffect, ChangeEvent } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+// Gunakan import type untuk ChangeEvent agar lolos verbatimModuleSyntax
+import type { ChangeEvent } from 'react';
 import { 
   AudioWaveform, 
   Upload, 
@@ -15,7 +17,6 @@ import {
 } from 'lucide-react';
 import { Mp3Encoder } from '@breezystack/lamejs';
 
-// Extend interface Window untuk webkitAudioContext (Safari support)
 declare global {
   interface Window {
     webkitAudioContext: typeof AudioContext;
@@ -218,6 +219,7 @@ function App() {
       const rendered = await offline.startRendering();
 
       const mp3encoder = new Mp3Encoder(rendered.numberOfChannels, rendered.sampleRate, 128);
+      // PERBAIKAN: Gunakan Uint8Array[] untuk mp3Data
       const mp3Data: Uint8Array[] = [];
 
       const left = rendered.getChannelData(0);
@@ -241,12 +243,18 @@ function App() {
         const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
         const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
         const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
-        if (mp3buf.length > 0) mp3Data.push(new Uint8Array(mp3buf));
+        if (mp3buf.length > 0) {
+          // PERBAIKAN: Pastikan buffer dicopy sebagai Uint8Array murni
+          mp3Data.push(new Uint8Array(mp3buf));
+        }
       }
 
       const endBuf = mp3encoder.flush();
-      if (endBuf.length > 0) mp3Data.push(new Uint8Array(endBuf));
+      if (endBuf.length > 0) {
+        mp3Data.push(new Uint8Array(endBuf));
+      }
 
+      // Blob sekarang akan menerima mp3Data tanpa error typing
       const blob = new Blob(mp3Data, { type: 'audio/mp3' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -290,7 +298,8 @@ function App() {
               <p className="text-[10px] font-bold text-white uppercase mt-2 font-mono">Ready for Roblox Pitching</p>
             </div>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              
               <div className="space-y-4">
                 <div className="flex justify-between items-end px-2">
                   <div className="flex flex-col gap-1">
@@ -326,7 +335,7 @@ function App() {
                   <div className="text-left leading-tight">
                     <p className={`font-bold text-xs ${mode === 'standard' ? 'text-[#d13a16]' : 'text-white/60'}`}>Days Render</p>
                     <p className="text-[9px] font-bold text-white/20 uppercase mt-1">2.5x / 150% Pitch</p>
-                    <p className="text-[9px] font-bold text-white/20 mt-1">;music ... pitch 0.40</p>
+                    <p className="text-[9px] font-bold text-white/20  mt-1">;music ... pitch 0.40</p>
                   </div>
                 </button>
 
@@ -338,7 +347,7 @@ function App() {
                   <div className="text-left leading-tight">
                     <p className={`font-bold text-xs ${mode === 'smooth' ? 'text-[#d13a16]' : 'text-white/60'}`}>Abiw Render</p>
                     <p className="text-[9px] font-bold text-white/20 uppercase mt-1">200% / 12 Semitones</p>
-                    <p className="text-[9px] font-bold text-white/20 mt-1">;music ... pitch 0.49</p>
+                    <p className="text-[9px] font-bold text-white/20  mt-1">;music ... pitch 0.49</p>
                   </div>
                 </button>
               </div>
